@@ -45,14 +45,11 @@
 #       設定するパラメータ
 #-----------------------------------------------------------------------------
 
-# LLVMダウンロード指定
-set(LLVM_DOWNLOAD "3.9.0")
+# LLVMバージョン指定
+set(LLVM_VERSION "4.0.0")
 
-# LLVMのソース・フォルダ
-set(LLVM_SOURCE "../llvm")
-
-# LLVMのインストール先のプリフィクス
-set(LLVM_PREFIX "$ENV{HOME}/install/llvm390/")
+# llvmのビルド・フォルダのプリフィクス
+set(LLVM_BINARY "../../build/")
 
 # MinGW/gccのbinフォルダのパス
 set(CC32 "/usr/bin")
@@ -73,7 +70,7 @@ set(SUMMARY linux.log)
 
 cmake_minimum_required(VERSION 3.5.0)
 
-set(SUMMARY ${SUMMARY})
+set(SUMMARY ${LLVM_BINARY}${SUMMARY})
 file(WRITE ${SUMMARY} "")
 
 include(prepare.cmake)

@@ -47,14 +47,11 @@
 #               llvm 4.0はmsvc2017でビルドできなかったため、msvc2015でビルドする。
 #-----------------------------------------------------------------------------
 
-# LLVMダウンロード指定
-set(LLVM_DOWNLOAD "4.0.0")
+# LLVMバージョン指定
+set(LLVM_VERSION "4.0.0")
 
-# LLVMのソース・フォルダ
-set(LLVM_SOURCE "../llvm")
-
-# LLVMのインストール先のプリフィクス
-set(LLVM_PREFIX "C:/llvm400/")
+# llvmのビルド・フォルダのプリフィクス
+set(LLVM_BINARY "../../build/")
 
 # MinGW/gccのbinフォルダのパス
 set(CC32 "C:/mingw-w64/i686-7.1.0-posix-dwarf-rt_v5-rev0/mingw32/bin")
@@ -75,7 +72,7 @@ set(SUMMARY windows.log)
 
 cmake_minimum_required(VERSION 3.8.0)
 
-set(SUMMARY ${SUMMARY})
+set(SUMMARY ${LLVM_BINARY}${SUMMARY})
 file(WRITE ${SUMMARY} "")
 
 include(prepare.cmake)

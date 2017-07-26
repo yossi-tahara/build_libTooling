@@ -37,7 +37,7 @@
 function(parameter_log LOG_FILE)
 
     file(WRITE  ${LOG_FILE} "--- Parameters ---\n")
-    file(APPEND ${LOG_FILE} "LLVM_DOWNLOAD   =${LLVM_DOWNLOAD}\n")
+    file(APPEND ${LOG_FILE} "LLVM_VERSION    =${LLVM_VERSION}\n")
     file(APPEND ${LOG_FILE} "LLVM_SOURCE     =${LLVM_SOURCE}\n")
     file(APPEND ${LOG_FILE} "LLVM_PREFIX     =${LLVM_PREFIX}\n")
     file(APPEND ${LOG_FILE} "COMPILER        =${COMPILER}\n")
@@ -190,10 +190,16 @@ function(absolute_path PATH_STRING RESULT)
     set(${RESULT} "${PATH_STRING}${LAST_CHAR}" PARENT_SCOPE)
 endfunction()
 
-absolute_path("${LLVM_SOURCE}" LLVM_SOURCE)
-absolute_path("${LLVM_PREFIX}" LLVM_PREFIX)
-message(STATUS "LLVM_SOURCE=${LLVM_SOURCE}")
-message(STATUS "LLVM_PREFIX=${LLVM_PREFIX}")
+# LLVM指定バージョン用フォルダ
+set(LLVM_ROOT "${LLVM_BINARY}/${LLVM_VERSION}")
+absolute_path("${LLVM_ROOT}" LLVM_ROOT)
+message(STATUS "LLVM_ROOT  =${LLVM_ROOT}")
+
+# LLVMのソース・フォルダ
+set(LLVM_SOURCE "${LLVM_ROOT}/source")
+
+# LLVMのインストール先のプリフィクス
+set(LLVM_PREFIX "${LLVM_ROOT}/install")
 
 # 環境変数のPATHを確保しておく
 set(ENV_PATH "$ENV{PATH}")
@@ -219,7 +225,8 @@ endfunction()
 
 macro(setup_build_folder COMPILER BIT_NUM CONFIG_TYPE)
 
-    set(LLVM_INSTALL "${LLVM_PREFIX}${COMPILER}x${BIT_NUM}")
+    # LLVMのイスントール先
+    set(LLVM_INSTALL "${LLVM_PREFIX}/${COMPILER}x${BIT_NUM}")
     if(NOT "${COMPILER}" MATCHES "msvc")
         if(NOT "${CONFIG_TYPE}" STREQUAL "")
             set(LLVM_INSTALL "${LLVM_INSTALL}-${CONFIG_TYPE}")
@@ -288,7 +295,7 @@ endif()
     message(STATUS "GENERATOR   =${GENERATOR}")
 
     # ビルド・フォルダ・パス
-    set(BUILD_DIR "${COMPILER}x${BIT_NUM}")
+    set(BUILD_DIR "${LLVM_ROOT}/${COMPILER}x${BIT_NUM}")
     if(NOT "${CONFIG_TYPE}" STREQUAL "")
         set(BUILD_DIR "${BUILD_DIR}-${CONFIG_TYPE}")
     endif()
@@ -346,12 +353,64 @@ function(llvm_setup VERSION)
 endfunction()
 
 # llvmをダウンロードする
-if ((NOT "${LLVM_DOWNLOAD}" STREQUAL "") AND (NOT EXISTS ${LLVM_SOURCE}))
-    llvm_setup(${LLVM_DOWNLOAD})
+if (NOT EXISTS ${LLVM_SOURCE})
+    llvm_setup(${LLVM_VERSION})
 endif()
 
 #-----------------------------------------------------------------------------
-#       ビルド処理
+#       Theolizerで使用するライブラリの抽出
+#-----------------------------------------------------------------------------
+
+set(LIBRARY_LIST ${LIBRARY_LIST} clangFrontend clangSerialization clangDriver)
+set(LIBRARY_LIST ${LIBRARY_LIST} clangTooling clangParse clangSema)
+set(LIBRARY_LIST ${LIBRARY_LIST} clangAnalysis clangEdit clangAST)
+set(LIBRARY_LIST ${LIBRARY_LIST} clangLex clangBasic clangRewrite)
+set(LIBRARY_LIST ${LIBRARY_LIST} LLVMProfileData LLVMObject LLVMMCParser LLVMBitReader)
+set(LIBRARY_LIST ${LIBRARY_LIST} LLVMCore LLVMMC LLVMOption LLVMSupport)
+
+function(packaging_lib_tooling COMPILER BIT_NUM CONFIG_TYPE)
+
+    # libToolingのパッケージ先
+    set(FOLDER "${COMPILER}x${BIT_NUM}")
+    if(NOT "${COMPILER}" MATCHES "msvc")
+        if(NOT "${CONFIG_TYPE}" STREQUAL "")
+            set(FOLDER "${FOLDER}-${CONFIG_TYPE}")
+        endif()
+    endif()
+    set(LLVM_PACKAGE "${LLVM_ROOT}/package/${FOLDER}")
+
+    # includeフォルダ
+    execute_process(COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${LLVM_INSTALL}/include" "${LLVM_PACKAGE}/include")
+
+    # libフォルダ(clang, cmake)
+    execute_process(COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${LLVM_INSTALL}/lib/clang" "${LLVM_PACKAGE}/lib/clang")
+    execute_process(COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${LLVM_INSTALL}/lib/cmake" "${LLVM_PACKAGE}/lib/cmake")
+    file(REMOVE "${LLVM_PACKAGE}/lib/cmake/llvm/LLVMExports.cmake")
+    file(COPY "${CMAKE_SOURCE_DIR}/LLVMExports.cmake" DESTINATION "${LLVM_PACKAGE}/lib/cmake/llvm")
+
+    # libフォルダ
+    if("${COMPILER}" MATCHES "msvc")
+        foreach(lib IN LISTS LIBRARY_LIST)
+            file(COPY "${LLVM_INSTALL}/lib/${lib}.lib" DESTINATION "${LLVM_PACKAGE}/lib")
+        endforeach()
+    else()
+        foreach(lib IN LISTS LIBRARY_LIST)
+            file(COPY "${LLVM_INSTALL}/lib/lib${lib}.a" DESTINATION "${LLVM_PACKAGE}/lib")
+        endforeach()
+    endif()
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E tar cvfj "${LLVM_PACKAGE}.tar.bz2" "${FOLDER}"
+        WORKING_DIRECTORY "${LLVM_ROOT}/package"
+    )
+
+endfunction()
+
+#-----------------------------------------------------------------------------
+#       ビルド処理メイン
 #-----------------------------------------------------------------------------
 
 function(build_process COMPILER BIT_NUM CONFIG_TYPE)
@@ -409,9 +468,12 @@ function(build_process COMPILER BIT_NUM CONFIG_TYPE)
         build(""      Release "${BUILD_DIR}")
         relay("  Installing  ...")
         build(install Release "${BUILD_DIR}")
+        relay("  Packaging   ...")
+        packaging_lib_tooling("${COMPILER}" "${BIT_NUM}" "${CONFIG_TYPE}")
         end("${BUILD_DIR}/zz1_build_release.log" FALSE)
     endif()
 
+if(FALSE) # Debug Buildは行わない
     if(("${CONFIG_TYPE}" STREQUAL "") OR ("${CONFIG_TYPE}" STREQUAL "Debug"))
         start("Build Debug   ...")
         build(""      Debug "${BUILD_DIR}")
@@ -419,5 +481,6 @@ function(build_process COMPILER BIT_NUM CONFIG_TYPE)
         build(install Debug "${BUILD_DIR}")
         end("${BUILD_DIR}/zz2_build_debug.log" FALSE)
     endif()
+endif()
 
 endfunction()
